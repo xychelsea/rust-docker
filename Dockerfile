@@ -1,0 +1,80 @@
+# Rust Dockerfile for Anaconda with TensorFlow stack
+# Copyright (C) 2020, 2021  Chelsea E. Manning
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+FROM xychelsea/anaconda3:v0.2
+LABEL description="Rust Vanilla Container"
+
+# $ docker build -t xychelsea/rust:latest -f Dockerfile .
+# $ docker run --rm -it xychelsea/rust:latest /bin/bash
+# $ docker push xychelsea/rust:latest
+
+ENV ANACONDA_ENV=rust
+ENV RUST_HOME=/usr/share/rust
+ENV CARGO_HOME=/usr/share/cargo
+ENV PATH=${CARGO_HOME}/bin:${RUST_HOME}/toolchains/nightly-x86_64-unknown-linux-gnu/bin:${PATH}
+
+# CUDA Linker paths
+ENV C_INCLUDE_PATH=/usr/local/cuda/include
+ENV LIBRARY_PATH=/usr/local/cuda/lib64
+
+# Start as root
+USER root
+
+# Update packages
+
+RUN apt-get update --fix-missing \
+    && apt-get -y upgrade \
+    && apt-get -y dist-upgrade
+
+# Install prerequisites
+RUN apt-get -y install \
+    build-essential \
+    curl
+
+RUN mkdir -p ${RUST_HOME} \
+    && mkdir -p ${CARGO_HOME} \
+    && chown -R ${ANACONDA_UID} ${RUST_HOME} \
+    && chown -R ${ANACONDA_UID} ${CARGO_HOME}
+
+# Switch to user "anaconda"
+USER ${ANACONDA_UID}
+WORKDIR ${HOME}
+
+# Update Anaconda
+RUN conda update -c defaults conda
+
+# Create Rust Environment
+RUN conda create -c conda-forge -n $ANACONDA_ENV
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > ${RUST_HOME}/rustup.sh \
+    && chmod +x ${RUST_HOME}/rustup.sh \
+    && ${RUST_HOME}/rustup.sh -y --default-toolchain nightly --no-modify-path \
+    && rm -rvf ${ANACONDA_PATH}/share/jupyter/lab/staging ${RUST_HOME}/rustup.sh
+
+# Switch back to root
+USER root
+
+# Clean Anaconda
+RUN conda clean -afy
+
+# Clean packages and caches
+RUN apt-get --purge -y autoremove \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* \
+    && rm -rvf ${HOME}/.cache/yarn
+
+# Re-activate user "anaconda"
+USER $ANACONDA_UID
+WORKDIR $HOME
